@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 import libpysal
 import esda
-from splot.esda import moran_scatterplot
+from splot.esda import moran_scatterplot, lisa_cluster # <-- ADICIONADO lisa_cluster
 
 # ==========================================================
 # CONFIGURAÇÃO INICIAL
@@ -38,7 +38,7 @@ def main():
     st.title("📊 Dashboard Analítico - Telefonia Móvel (SMP)")
     st.write("Análise Espacial de Reclamações de Rede e Qualidade (2020 - 2025)")
 
-    # Tenta carregar os dados automaticamente
+    # Tenta carregar os dados automaticamente da raiz
     try:
         with st.spinner("Carregando base espacial..."):
             mapa_smp = carregar_mapa_smp()
@@ -50,21 +50,25 @@ def main():
     anos = ['2020', '2021', '2022', '2023', '2024', '2025']
 
     st.sidebar.markdown("### Controles de Visualização")
-    visao_smp = st.sidebar.radio("Tipo de Análise", ["Mapas", "Diagramas de Dispersão (LISA)", "Tabela de Indicadores"])
+    # Menu atualizado com os mapas de clusters
+    visao_smp = st.sidebar.radio(
+        "Tipo de Análise", 
+        ["Mapas de Calor (Suavizados)", "Mapas de Clusters (LISA)", "Diagramas de Dispersão (Moran)", "Tabela de Indicadores"]
+    )
     modo_exibicao = st.sidebar.radio("Modo de Exibição", ["Ano Específico", "Todos os Anos (Comparativo)"])
     
     # Dropdown de seleção de ano
     ano_selecionado = st.sidebar.selectbox("Ano de Referência", options=anos, index=5)
 
-    # Definir quebras fixas (bins) para manter as cores padronizadas em todos os mapas
+    # Definir quebras fixas (bins) para manter as cores padronizadas nos mapas de calor
     colunas_suavizadas = [f'taxa_suav_{a}' for a in anos]
     vmax = np.ceil(mapa_smp[colunas_suavizadas].max().max())
     bins_manuais = [0.5, 1.0, 2.0, 5.0, vmax]
 
     # ==========================================
-    # 1. MAPAS (ESTÁTICOS COM MATPLOTLIB)
+    # 1. MAPAS DE CALOR (ESTÁTICOS)
     # ==========================================
-    if visao_smp == "Mapas":
+    if visao_smp == "Mapas de Calor (Suavizados)":
         if modo_exibicao == "Ano Específico":
             coluna_suav = f'taxa_suav_{ano_selecionado}'
             st.subheader(f"Mapa de Calor - Taxa Suavizada Bayesiana ({ano_selecionado})")
@@ -80,10 +84,9 @@ def main():
                 missing_kwds={'color': 'lightgrey', 'label': 'Sem dados'},
                 legend_kwds={'loc': 'lower right', 'fontsize': 8}
             )
-            ax.set_title(f"Reclamações Anatel SMP: {ano_selecionado} (Taxa Suavizada)", fontsize=12)
+            ax.set_title(f"Reclamações Anatel SMP: {ano_selecionado}", fontsize=12)
             ax.axis('off')
             
-            # Centraliza e restringe o tamanho
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 st.pyplot(fig)
@@ -96,8 +99,6 @@ def main():
             
             for i, ano in enumerate(anos):
                 ax = axes[i]
-                
-                # Exibe a legenda apenas no último gráfico para não poluir
                 exibir_legenda = (i == 5)
                 
                 mapa_smp.plot(
@@ -114,17 +115,53 @@ def main():
                 ax.axis('off')
             
             plt.subplots_adjust(right=0.85, wspace=0.1, hspace=0.2)
-            
-            # Centraliza e restringe o tamanho
             col1, col2, col3 = st.columns([1, 4, 1])
             with col2:
                 st.pyplot(fig)
 
     # ==========================================
-    # 2. DIAGRAMA DE DISPERSÃO (LISA)
+    # 2. MAPAS DE CLUSTERS (LISA COROPLÉTICO)
     # ==========================================
-    elif visao_smp == "Diagramas de Dispersão (LISA)":
-        st.subheader("Análise de Autocorrelação Espacial Local (Índice de Moran)")
+    elif visao_smp == "Mapas de Clusters (LISA)":
+        st.subheader("Mapas de Clusters Espaciais (LISA)")
+        st.write("Identificação de aglomerados espaciais significativos (Alto-Alto, Baixo-Baixo, Alto-Baixo, Baixo-Alto)")
+
+        if modo_exibicao == "Ano Específico":
+            y = mapa_smp[f'taxa_suav_{ano_selecionado}'].values
+            moran_loc = esda.moran.Moran_Local(y, w_hist)
+            
+            fig, ax = plt.subplots(figsize=(7, 5))
+            lisa_cluster(moran_loc, mapa_smp, p=0.05, ax=ax, legend_kwds={'loc': 'lower right', 'fontsize': 8})
+            ax.set_title(f"Clusters LISA - {ano_selecionado}", fontsize=12)
+            ax.axis('off')
+            
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.pyplot(fig)
+            
+        else:
+            fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(10, 6))
+            axes = axes.flatten()
+            for i, ano in enumerate(anos):
+                y = mapa_smp[f'taxa_suav_{ano}'].values
+                moran_loc = esda.moran.Moran_Local(y, w_hist)
+                ax = axes[i]
+                
+                # A função lisa_cluster trata legendas internamente, então exibimos em todos para garantir o padrão
+                lisa_cluster(moran_loc, mapa_smp, p=0.05, ax=ax, legend_kwds={'loc': 'lower right', 'fontsize': 6})
+                ax.set_title(f"Clusters - {ano}", fontsize=10)
+                ax.axis('off')
+            
+            plt.tight_layout()
+            col1, col2, col3 = st.columns([1, 4, 1])
+            with col2:
+                st.pyplot(fig)
+
+    # ==========================================
+    # 3. DIAGRAMAS DE DISPERSÃO (MORAN SCATTER)
+    # ==========================================
+    elif visao_smp == "Diagramas de Dispersão (Moran)":
+        st.subheader("Diagramas de Dispersão de Moran Local")
 
         if modo_exibicao == "Ano Específico":
             y = mapa_smp[f'taxa_suav_{ano_selecionado}'].values
@@ -132,11 +169,10 @@ def main():
             
             fig, ax = plt.subplots(figsize=(6, 5))
             moran_scatterplot(moran_loc, p=0.05, ax=ax)
-            ax.set_title(f"Diagrama de Dispersão LISA - {ano_selecionado}", fontsize=12)
+            ax.set_title(f"Diagrama de Dispersão - {ano_selecionado}", fontsize=12)
             ax.set_xlabel("Taxa Suavizada do Município (Z-score)", fontsize=9)
             ax.set_ylabel("Média da Taxa dos Vizinhos (Spatial Lag)", fontsize=9)
             
-            # Centraliza e restringe o tamanho
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 st.pyplot(fig)
@@ -149,19 +185,17 @@ def main():
                 moran_loc = esda.moran.Moran_Local(y, w_hist)
                 ax = axes[i]
                 moran_scatterplot(moran_loc, p=0.05, ax=ax)
-                ax.set_title(f"LISA - {ano}", fontsize=10)
+                ax.set_title(f"Moran - {ano}", fontsize=10)
                 ax.set_xlabel("Z-score", fontsize=7)
                 ax.set_ylabel("Spatial Lag", fontsize=7)
             
             plt.tight_layout()
-            
-            # Centraliza e restringe o tamanho
             col1, col2, col3 = st.columns([1, 4, 1])
             with col2:
                 st.pyplot(fig)
 
     # ==========================================
-    # 3. TABELA DE INDICADORES (TABELA 1)
+    # 4. TABELA DE INDICADORES (TABELA 1)
     # ==========================================
     elif visao_smp == "Tabela de Indicadores":
         st.subheader(f"Indicadores de Municípios e Capitais - {ano_selecionado}")
@@ -181,10 +215,8 @@ def main():
             col_suav: 'Taxa bayesiana empírica espacial'
         })
         
-        # 20 municípios com menos acessos (maiores que 0)
         df_menores_20 = df_base[df_base['Acessos'] > 0].nsmallest(20, 'Acessos')
         
-        # 27 capitais
         codigos_capitais = [
             1100205, 1200401, 1302603, 1400100, 1501402, 1600303, 1721000, 
             2111300, 2211001, 2304400, 2408102, 2507507, 2611606, 2704302, 
