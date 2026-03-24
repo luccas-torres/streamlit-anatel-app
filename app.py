@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 import libpysal
 import esda
-from splot.esda import moran_scatterplot, lisa_cluster # <-- ADICIONADO lisa_cluster
+from splot.esda import moran_scatterplot, lisa_cluster
 
 # ==========================================================
 # CONFIGURAÇÃO INICIAL
@@ -50,23 +50,23 @@ def main():
     anos = ['2020', '2021', '2022', '2023', '2024', '2025']
 
     st.sidebar.markdown("### Controles de Visualização")
-    # Menu atualizado com os mapas de clusters
+    # Menu atualizado com a opção de Taxa Bruta
     visao_smp = st.sidebar.radio(
         "Tipo de Análise", 
-        ["Mapas de Calor (Suavizados)", "Mapas de Clusters (LISA)", "Diagramas de Dispersão (Moran)", "Tabela de Indicadores"]
+        ["Mapas de Calor (Suavizados)", "Mapas de Calor (Taxa Bruta)", "Mapas de Clusters (LISA)", "Diagramas de Dispersão (Moran)", "Tabela de Indicadores"]
     )
     modo_exibicao = st.sidebar.radio("Modo de Exibição", ["Ano Específico", "Todos os Anos (Comparativo)"])
     
     # Dropdown de seleção de ano
     ano_selecionado = st.sidebar.selectbox("Ano de Referência", options=anos, index=5)
 
-    # Definir quebras fixas (bins) para manter as cores padronizadas nos mapas de calor
+    # Definir quebras fixas (bins) para manter as cores padronizadas nos mapas de calor suavizados
     colunas_suavizadas = [f'taxa_suav_{a}' for a in anos]
     vmax = np.ceil(mapa_smp[colunas_suavizadas].max().max())
     bins_manuais = [0.5, 1.0, 2.0, 5.0, vmax]
 
     # ==========================================
-    # 1. MAPAS DE CALOR (ESTÁTICOS)
+    # 1. MAPAS DE CALOR (SUAVIZADOS)
     # ==========================================
     if visao_smp == "Mapas de Calor (Suavizados)":
         if modo_exibicao == "Ano Específico":
@@ -112,6 +112,66 @@ def main():
                     legend_kwds={'loc': 'center left', 'bbox_to_anchor': (1.05, 0.5), 'fontsize': 9} if exibir_legenda else None
                 )
                 ax.set_title(f"SMP: {ano}", fontsize=10)
+                ax.axis('off')
+            
+            plt.subplots_adjust(right=0.85, wspace=0.1, hspace=0.2)
+            col1, col2, col3 = st.columns([1, 4, 1])
+            with col2:
+                st.pyplot(fig)
+
+    # ==========================================
+    # 1.5. MAPAS DE CALOR (TAXA BRUTA) - ADICIONADO
+    # ==========================================
+    elif visao_smp == "Mapas de Calor (Taxa Bruta)":
+        # Recalcula os bins para a taxa bruta, pois os máximos costumam ser muito maiores
+        colunas_brutas = [f'taxa_bruta_{a}' for a in anos]
+        vmax_bruta = np.ceil(mapa_smp[colunas_brutas].max().max())
+        bins_bruta = [0.5, 1.0, 2.0, 5.0, vmax_bruta]
+
+        if modo_exibicao == "Ano Específico":
+            coluna_bruta = f'taxa_bruta_{ano_selecionado}'
+            st.subheader(f"Mapa de Calor - Taxa Bruta ({ano_selecionado})")
+            st.write("*Visualização antes do tratamento espacial. Municípios com menos de 1000 acessos aparecem como 'Sem dados'.*")
+            
+            fig, ax = plt.subplots(figsize=(7, 5))
+            mapa_smp.plot(
+                column=coluna_bruta, 
+                cmap='YlOrRd', 
+                scheme='UserDefined',
+                classification_kwds={'bins': bins_bruta}, 
+                legend=True, 
+                ax=ax,
+                missing_kwds={'color': 'lightgrey', 'label': 'Sem dados'},
+                legend_kwds={'loc': 'lower right', 'fontsize': 8}
+            )
+            ax.set_title(f"Taxa Bruta SMP: {ano_selecionado}", fontsize=12)
+            ax.axis('off')
+            
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.pyplot(fig)
+
+        else:
+            st.subheader("Comparativo Histórico de Taxas Brutas (2020-2025)")
+
+            fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(10, 6))
+            axes = axes.flatten()
+            
+            for i, ano in enumerate(anos):
+                ax = axes[i]
+                exibir_legenda = (i == 5)
+                
+                mapa_smp.plot(
+                    column=f'taxa_bruta_{ano}', 
+                    cmap='YlOrRd', 
+                    scheme='UserDefined',
+                    classification_kwds={'bins': bins_bruta}, 
+                    legend=exibir_legenda, 
+                    ax=ax,
+                    missing_kwds={'color': 'lightgrey'},
+                    legend_kwds={'loc': 'center left', 'bbox_to_anchor': (1.05, 0.5), 'fontsize': 9} if exibir_legenda else None
+                )
+                ax.set_title(f"Taxa Bruta: {ano}", fontsize=10)
                 ax.axis('off')
             
             plt.subplots_adjust(right=0.85, wspace=0.1, hspace=0.2)
